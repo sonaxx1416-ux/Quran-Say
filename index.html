@@ -98,7 +98,7 @@ input:focus{outline:none;border-color:var(--b)}
 <script>
 const $=s=>document.querySelector(s);
 const AR_PASS=0.8;      // نسبة الكلمات الصح المطلوبة للنجاح
-const SILENCE_MS=2000;  // كم ثانية سكوت قبل ما يفحص
+const SILENCE_MS=1400;  // كم ثانية سكوت قبل ما يفحص
 const norm=t=>t.replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g,'')
   .replace(/[إأآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').replace(/ؤ/g,'و').replace(/ئ/g,'ي')
   .replace(/[^\u0621-\u064A ]/g,'').replace(/\s+/g,' ').trim();
@@ -108,7 +108,7 @@ function lev(a,b){const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[
   for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)
    d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
   return d[m][n]}
-const sim=(a,b)=>a&&b?1-lev(a,b)/Math.max(a.length,b.length):0;
+const sim=(a,b)=>a===b?1:a&&b?1-lev(a,b)/Math.max(a.length,b.length):0;
 
 // يطابق كلامك مع كلمات الآية بالترتيب (يسمح بتخطي كلمة أو كلمتين)
 function align(spoken,target){
@@ -125,14 +125,15 @@ const API='https://api.alquran.cloud/v1';
 async function getSurahs(){
   const r=await fetch(API+'/surah');if(!r.ok)throw 0;
   return (await r.json()).data.map(s=>({n:s.number,name:s.name,count:s.numberOfAyahs}))}
-async function getSurah(n){
+const _c={};const getSurah=n=>_c[n]||(_c[n]=loadSurah(n).catch(e=>{delete _c[n];throw e}));
+async function loadSurah(n){
   const r=await fetch(`${API}/surah/${n}/editions/quran-uthmani,quran-simple-clean,ar.alafasy`);if(!r.ok)throw 0;
   const [uth,clean,audio]=(await r.json()).data.map(e=>e.ayahs);
   return uth.map((u,i)=>{
     let uw=u.text.split(/\s+/).filter(Boolean),cw=clean[i].text.split(/\s+/).filter(Boolean);
     if(u.numberInSurah===1&&n!==1&&n!==9&&cw.length>4){uw=uw.slice(4);cw=cw.slice(4)} // نشيل البسملة
     if(uw.length!==cw.length)uw=cw;
-    return {n:u.numberInSurah,words:uw,match:cw,audio:audio[i].audio}})}
+    return {n:u.numberInSurah,words:uw,match:cw,nm:cw.map(norm),audio:audio[i].audio}})}
 
 let surahs=[],ayat=[],idx=0,xp=0,rec=null,listening=false,lastSpeech=0,timer=null,transcript='',audio=null,sid=0;
 
@@ -189,7 +190,8 @@ $('#mic').onclick=()=>{
   transcript='';lastSpeech=0;paint(Array(ayat[idx].words.length).fill(''),false);
   rec.onresult=e=>{
     transcript=[...e.results].map(r=>r[0].transcript).join(' ');lastSpeech=Date.now();
-    paint(align(norm(transcript).split(' '),ayat[idx].match.map(norm)),false);
+    const st=align(norm(transcript).split(' '),ayat[idx].nm);paint(st,false);
+    if(st[st.length-1]==='ok'&&st.filter(x=>x==='ok').length/st.length>=AR_PASS)finish(); // خلص الآية؟ نفحص فوراً
     say('🐥 أسمعك... كمّل!');};
   rec.onerror=e=>{if(e.error==='not-allowed')say('🎤 اسمح للمتصفح باستخدام المايك');};
   rec.onend=()=>{if(listening)finish()};
@@ -203,7 +205,7 @@ function finish(){
   if(!listening)return;listening=false;clearInterval(timer);
   try{rec.stop()}catch(e){}
   $('#mic').textContent='🎤 ابدأ القراءة';$('#mic').classList.remove('pulse','red');
-  const tg=ayat[idx].match.map(norm),st=align(norm(transcript).split(' '),tg);
+  const tg=ayat[idx].nm,st=align(norm(transcript).split(' '),tg);
   paint(st,true);
   const ok=st.filter(s=>s==='ok').length,ratio=ok/tg.length;
   if(!transcript.trim()){say('🐥 ما سمعتك.. جرب مرة ثانية 🎤');beep(false);return}
@@ -229,7 +231,7 @@ function celebrate(){
 function speak(t,cb){
   let called=false;const done=()=>{if(!called){called=true;cb&&cb()}};
   try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);
-    u.lang='ar-SA';u.rate=.95;u.pitch=1.2;u.onend=done;u.onerror=done;speechSynthesis.speak(u);setTimeout(done,1800)}
+    u.lang='ar-SA';u.rate=1.1;u.pitch=1.2;u.onend=done;u.onerror=done;speechSynthesis.speak(u);setTimeout(done,1200)}
   catch(e){done()}}
 function beep(good){speak(good?'صح':'لا')}
 function unlockAudio(){}
@@ -268,7 +270,7 @@ function ghRec(){
   try{r.start()}catch(e){}
 }
 function ghCheck(sp){
-  const tg=ayat[gh.k].match.map(norm),part=sp.slice(gh.base),st=align(part,tg);
+  const tg=ayat[gh.k].nm,part=sp.slice(gh.base),st=align(part,tg);
   ghPaint(st);gsay('🐥 أسمعك... كمّل!');
   const ok=st.filter(s=>s==='ok').length;
   if(st[tg.length-1]==='ok'&&ok/tg.length>=AR_PASS){gh.base+=st.used;ghDone(st,true)}
