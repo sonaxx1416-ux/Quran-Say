@@ -35,6 +35,10 @@ input:focus{outline:none;border-color:var(--b)}
 .mic{font-size:20px}.pulse{animation:pulse 1s infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 14px #ff4b4b33}}
 .hide{display:none}
+.doneayah{background:#d7ffb8;border:3px solid #58cc02;border-radius:22px;margin-top:10px;padding:6px 14px;font-family:'Amiri Quran',serif;font-size:30px;line-height:2.1;text-align:center}
+.doneayah.gaveup{background:#ffdfe0;border-color:#ff4b4b}
+.num.sm{width:30px;height:30px;line-height:30px;font-size:16px;font-family:'Baloo Bhaijaan 2',sans-serif}
+.blank{color:#c9c9c9;background:#f3f3f3}
 .pop{position:fixed;font-size:34px;pointer-events:none;animation:fly 1.4s ease-out forwards}
 @keyframes fly{to{transform:translateY(-260px) rotate(40deg);opacity:0}}
 .list{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:150px;overflow:auto}
@@ -44,11 +48,12 @@ input:focus{outline:none;border-color:var(--b)}
 <div id="home" class="card">
   <div class="mascot">🐥</div>
   <h1>يلا نقرأ قرآن! 🌙</h1>
-  <div class="bubble">اختر السورة وخلنا نبدأ</div>
+  <div class="bubble">اختر السورة، وبعدين اختر: قراءة أو تسميع غيب</div>
   <input id="q" list="dl" placeholder="اكتب اسم السورة... مثال: الفاتحة" autocomplete="off">
   <datalist id="dl"></datalist>
   <div class="list" id="chips"></div>
-  <button class="btn" id="go">يلا نبدأ 🚀</button>
+  <button class="btn" id="go">📖 قراءة</button>
+  <button class="btn blue" id="gh">🧠 تسميع غيب</button>
   <div id="err" style="color:var(--r)"></div>
 </div>
 
@@ -63,6 +68,22 @@ input:focus{outline:none;border-color:var(--b)}
       <button class="btn blue" id="listen">🔊 اسمع</button>
       <button class="btn" id="mic">🎤 ابدأ القراءة</button>
       <button class="btn blue hide" id="next">التالي ➡️</button>
+    </div>
+  </div>
+</div>
+
+<div id="gh_screen" class="hide">
+  <div class="top"><button class="btn red" id="ghback" style="padding:4px 14px;font-size:18px">✖</button>
+   <div class="bar"><i id="gbar"></i></div><div id="gxp">⭐ 0</div></div>
+  <div id="rev"></div>
+  <div class="card">
+    <span class="num" id="gnum">1</span>
+    <div class="ayah" id="gcur"></div>
+    <div class="bubble" id="gsay"></div>
+    <div>
+      <button class="btn" id="gmic">🎤 ابدأ التسميع</button>
+      <button class="btn blue" id="ghint">💡 تلميح</button>
+      <button class="btn red" id="gshow">👀 أظهر الآية</button>
     </div>
   </div>
 </div>
@@ -91,10 +112,10 @@ const sim=(a,b)=>a&&b?1-lev(a,b)/Math.max(a.length,b.length):0;
 
 // يطابق كلامك مع كلمات الآية بالترتيب (يسمح بتخطي كلمة أو كلمتين)
 function align(spoken,target){
-  const st=Array(target.length).fill('');let i=0;
-  for(const w of spoken){
+  const st=Array(target.length).fill('');st.used=0;let i=0;
+  for(let si=0;si<spoken.length;si++){const w=spoken[si];
     for(let j=i;j<Math.min(i+3,target.length);j++){
-      if(sim(w,target[j])>=0.7){for(let k=i;k<j;k++)st[k]='late';st[j]='ok';i=j+1;break}
+      if(sim(w,target[j])>=0.7){for(let k=i;k<j;k++)st[k]='late';st[j]='ok';i=j+1;st.used=si+1;break}
     }
   }
   return st}
@@ -120,21 +141,24 @@ async function init(){
     surahs=await getSurahs();
     $('#dl').innerHTML=surahs.map(s=>`<option value="${norm(s.name).replace(/^سوره /,'')}">`).join('');
     $('#chips').innerHTML=surahs.slice(-30).reverse().map(s=>`<span class="chip" data-n="${s.n}">${norm(s.name).replace(/^سوره /,'')}</span>`).join('');
-    $('#chips').onclick=e=>{if(e.target.dataset.n)start(+e.target.dataset.n)};
+    $('#chips').onclick=e=>{if(e.target.dataset.n)$('#q').value=e.target.textContent};
   }catch(e){$('#err').textContent='ما قدرت أتصل بالإنترنت 😢'}
 }
-$('#go').onclick=()=>{
+const pick=mode=>{
   const q=norm($('#q').value).replace(/^سوره /,'');
   const s=surahs.find(s=>String(s.n)===q||norm(s.name).replace(/^سوره /,'').replace(/^ال/,'')===q.replace(/^ال/,''))
         ||surahs.find(s=>norm(s.name).includes(q));
   if(!q||!s){$('#err').textContent='ما لقيت السورة، جرب تكتبها بشكل ثاني 🤔';return}
-  start(s.n)};
+  start(s.n,mode)};
+$('#go').onclick=()=>pick('read');$('#gh').onclick=()=>pick('gh');
 
-async function start(n){
+async function start(n,mode){
   $('#err').textContent='';
   try{ayat=await getSurah(n)}catch(e){$('#err').textContent='صار خطأ بالتحميل 😢';return}
   idx=0;xp=0;sid=n;
-  $('#home').classList.add('hide');$('#lesson').classList.remove('hide');show();
+  $('#home').classList.add('hide');
+  if(mode==='gh'){ghStart();return}
+  $('#lesson').classList.remove('hide');show();
 }
 
 function show(){
@@ -201,18 +225,93 @@ function celebrate(){
   for(let i=0;i<14;i++){const p=document.createElement('div');p.className='pop';
     p.textContent=['⭐','🎉','🌟','✨','🎈'][i%5];p.style.left=Math.random()*90+'vw';p.style.top=(55+Math.random()*30)+'vh';
     p.style.animationDelay=Math.random()*.4+'s';document.body.appendChild(p);setTimeout(()=>p.remove(),2000)}}
-// ===== الأصوات (مولّدة داخل السكربت، ما تحتاج ملفات) =====
-let ctx=null;
-function unlockAudio(){try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();
-  if(ctx.state==='suspended')ctx.resume()}catch(e){}}
-function tone(f,t,d,type,vol){if(!ctx)return;const o=ctx.createOscillator(),g=ctx.createGain(),s=ctx.currentTime+t;
-  o.type=type;o.frequency.setValueAtTime(f,s);o.connect(g);g.connect(ctx.destination);
-  g.gain.setValueAtTime(.0001,s);g.gain.exponentialRampToValueAtTime(vol,s+.02);
-  g.gain.exponentialRampToValueAtTime(.0001,s+d);o.start(s);o.stop(s+d+.05)}
-function beep(good){unlockAudio();
-  if(good){ // صوت نجاح فرحان: دو مي صول دو عالي
-    [523,659,784,1047].forEach((f,i)=>tone(f,i*.12,.3,'triangle',.4));tone(1319,.5,.6,'sine',.35)}
-  else{     // صوت خطأ: نغمتين نازلتين
-    tone(260,0,.25,'sawtooth',.25);tone(180,.25,.45,'sawtooth',.25)}}
+// ===== التغذية الراجعة بالصوت: "صح" و "لا" (بدون نغمات) =====
+function speak(t,cb){
+  let called=false;const done=()=>{if(!called){called=true;cb&&cb()}};
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);
+    u.lang='ar-SA';u.rate=.95;u.pitch=1.2;u.onend=done;u.onerror=done;speechSynthesis.speak(u);setTimeout(done,1800)}
+  catch(e){done()}}
+function beep(good){speak(good?'صح':'لا')}
+function unlockAudio(){}
+
+// ===== قسم التسميع الغيبي =====
+const GH_SILENCE=4000; // سكوت بعده نعتبرها محاولة غلط
+const gh={on:false,paused:false,k:0,base:0,total:0,fails:0,hint:0,xp:0,rec:null,last:0,timer:null};
+const gsay=t=>$('#gsay').textContent=t;
+
+function ghStart(){
+  $('#gh_screen').classList.remove('hide');$('#rev').innerHTML='';
+  gh.k=0;gh.xp=0;gh.on=false;ghCard();
+}
+function ghCard(){
+  const a=ayat[gh.k];gh.fails=0;gh.hint=0;
+  $('#gnum').textContent=a.n;$('#gbar').style.width=(gh.k/ayat.length*100)+'%';$('#gxp').textContent='⭐ '+gh.xp;
+  ghPaint(Array(a.words.length).fill(''));
+  gsay(gh.on?'🐥 كمّل، أنا أسمعك!':'🐥 اضغط ابدأ وسمّع من حفظك، وأنا أظهر الآيات الصح!');
+  $('#gcur').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function ghPaint(st){
+  const a=ayat[gh.k];
+  $('#gcur').innerHTML=a.words.map((w,i)=>st[i]==='ok'?`<span class="w ok">${w}</span>`
+    :i<gh.hint?`<span class="w late">${w}</span>`:`<span class="w blank">＿＿</span>`).join(' ');
+}
+function ghRec(){
+  if(!SR){gsay('😢 افتح التطبيق من متصفح Chrome');return}
+  if(gh.rec){gh.rec.onend=null;gh.rec.onresult=null;try{gh.rec.abort()}catch(e){}}
+  const r=new SR();gh.rec=r;r.lang='ar-SA';r.continuous=true;r.interimResults=true;gh.base=0;gh.total=0;
+  r.onresult=e=>{
+    if(!gh.on||gh.paused)return;
+    const sp=norm([...e.results].map(x=>x[0].transcript).join(' ')).split(' ').filter(Boolean);
+    gh.last=Date.now();gh.total=sp.length;ghCheck(sp)};
+  r.onerror=e=>{if(e.error==='not-allowed'){gh.on=false;gsay('🎤 اسمح للمتصفح باستخدام المايك')}};
+  r.onend=()=>{if(gh.on&&!gh.paused)ghRec()};
+  try{r.start()}catch(e){}
+}
+function ghCheck(sp){
+  const tg=ayat[gh.k].match.map(norm),part=sp.slice(gh.base),st=align(part,tg);
+  ghPaint(st);gsay('🐥 أسمعك... كمّل!');
+  const ok=st.filter(s=>s==='ok').length;
+  if(st[tg.length-1]==='ok'&&ok/tg.length>=AR_PASS){gh.base+=st.used;ghDone(st,true)}
+}
+function ghDone(st,good){
+  const a=ayat[gh.k];
+  const d=document.createElement('div');d.className='doneayah'+(good?'':' gaveup');
+  d.innerHTML=`<span class="num sm">${a.n}</span> `+a.words.map((w,i)=>
+    `<span class="w ${good?(st[i]==='ok'?'ok':'late'):'miss'}">${w}</span>`).join(' ');
+  $('#rev').appendChild(d);
+  if(good){gh.xp+=10;celebrate();ghSpeak(true)}
+  gh.k++;gh.last=0;
+  if(gh.k>=ayat.length){ghEnd();return}
+  ghCard();
+}
+function ghSpeak(good){ // نوقف المايك وقت الكلام عشان ما يسمع نفسه
+  if(!gh.on){speak(good?'صح':'لا');return}
+  gh.paused=true;try{gh.rec.abort()}catch(e){}
+  speak(good?'صح':'لا',()=>{gh.paused=false;if(gh.on)ghRec()});
+}
+function ghEnd(){
+  gh.on=false;clearInterval(gh.timer);try{gh.rec.abort()}catch(e){}
+  $('#gh_screen').classList.add('hide');$('#done').classList.remove('hide');
+  $('#final').textContent='سمّعت السورة غيب! ⭐ '+gh.xp+' نجمة';celebrate();celebrate();
+}
+$('#gmic').onclick=()=>{
+  if(gh.on){gh.on=false;clearInterval(gh.timer);try{gh.rec.abort()}catch(e){}
+    $('#gmic').textContent='🎤 كمّل التسميع';$('#gmic').classList.remove('pulse','red');gsay('🐥 وقفنا.. كمّل لمن تبي!');return}
+  gh.on=true;gh.paused=false;gh.last=0;ghRec();
+  $('#gmic').textContent='⏹ وقف';$('#gmic').classList.add('pulse','red');gsay('🐥 يلا سمّع من حفظك!');
+  clearInterval(gh.timer);
+  gh.timer=setInterval(()=>{
+    if(!gh.on||gh.paused||!gh.last||Date.now()-gh.last<GH_SILENCE)return;
+    gh.last=0;gh.fails++;gh.base=gh.total;            // نبدأ المحاولة من جديد
+    if(gh.fails>=2&&gh.hint<1)gh.hint=1;               // بعد غلطتين نعطيه أول كلمة
+    ghPaint(Array(ayat[gh.k].words.length).fill(''));
+    gsay(gh.fails>=2?'💪 قريب! هذي أول كلمة، حاول مرة ثانية':'🐥 ما صح.. حاول تعيد الآية');
+    ghSpeak(false);
+  },400);
+};
+$('#ghint').onclick=()=>{gh.hint=Math.min(gh.hint+1,ayat[gh.k].words.length-1);ghPaint(Array(ayat[gh.k].words.length).fill(''))};
+$('#gshow').onclick=()=>{gh.base=gh.total||gh.base;ghDone([],false)};
+$('#ghback').onclick=()=>location.reload();
+
 init();
 </script></body></html>
